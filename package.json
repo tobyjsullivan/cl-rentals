@@ -1,0 +1,10 @@
+{
+  "name": "cl-rentals",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "puppeteer": "^10.4.0"
+  }
+}
