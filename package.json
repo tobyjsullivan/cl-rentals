@@ -5,6 +5,7 @@
   "license": "UNLICENSED",
   "private": true,
   "dependencies": {
+    "csv-stringify": "^5.6.5",
     "puppeteer": "^10.4.0"
   }
 }
