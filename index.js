@@ -1,8 +1,7 @@
 const { readFile, writeFile, access, mkdir, open } = require("fs/promises");
 const puppeteer = require("puppeteer");
 const stringify = require("csv-stringify");
-const { Readable, Transform } = require("stream");
-const { exit } = require("process");
+const { Readable, Transform, pipeline } = require("stream");
 const path = require("path");
 
 const START_URL =
@@ -174,11 +173,6 @@ async function main() {
       callback(undefined, csvRow);
     },
   });
-  csvTransform.on("data", (data) => {
-    console.log("STREAM DATA: ", data);
-  });
-
-  csvTransform.on("end", () => console.log("Stream closed."));
 
   let count = 0;
   const loggingTransform = new Transform({
@@ -196,21 +190,25 @@ async function main() {
   console.log("Opening for append: ", RESULTS_CSV);
   const outfile = await open(RESULTS_CSV, "a");
   const writeStream = outfile.createWriteStream();
+  writeStream.on("finish", () => {
+    console.log("Closing output file...");
+    outfile.close();
+  });
 
-  const writeFinished = new Promise((resolve) =>
-    writeStream.on("finish", resolve)
-  );
+  const finished = new Promise((resolve) => {
+    pipeline(
+      listingsStream,
+      csvTransform,
+      csvStringifier,
+      loggingTransform,
+      writeStream,
+      resolve
+    );
+  });
 
-  listingsStream
-    .pipe(csvTransform) //
-    .pipe(csvStringifier) //
-    .pipe(loggingTransform) //
-    .pipe(writeStream);
-
-  await writeFinished;
-  outfile.close();
-
+  await finished;
   // await browser.close();
+  console.log("Done.");
 }
 
 main();
