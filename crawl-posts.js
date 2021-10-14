@@ -137,7 +137,7 @@ async function crawlPost(browser, postId, url) {
     const longitude = await getAttribute(page, $map, "data-longitude");
     const accuracy = await getAttribute(page, $map, "data-accuracy");
 
-    const $mapAddress = await $map.$(".mapaddress");
+    const $mapAddress = await $userBody.$(".mapaddress");
     const streetAddress = $mapAddress ? await getText(page, $mapAddress) : null;
 
     const $postBody = await $userBody.$("#postingbody");
