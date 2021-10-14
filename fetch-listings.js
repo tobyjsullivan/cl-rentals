@@ -156,8 +156,8 @@ async function main() {
 
   const writeStream = await writeResultsStream();
 
-  pipeline(listingsStream, writeStream, () => {
-    // await browser.close();
+  pipeline(listingsStream, writeStream, async () => {
+    await browser.close();
     console.log("Done.");
   });
 }
