@@ -1,8 +1,8 @@
-const { readFile, writeFile, access, mkdir, open } = require("fs/promises");
-const puppeteer = require("puppeteer");
-const stringify = require("csv-stringify");
-const { Readable, Transform, pipeline } = require("stream");
-const path = require("path");
+import { readFile, writeFile, access, mkdir } from "fs/promises";
+import puppeteer from "puppeteer";
+import { Readable, pipeline } from "stream";
+import path from "path";
+import { result as postResult, writeResultsStream } from "./results";
 
 const START_URL =
   "https://vancouver.craigslist.org/d/apartments-housing-for-rent/search/apa";
@@ -10,8 +10,6 @@ const START_URL =
 const DATA_DIR = "./data";
 const LAST_RUN_FILE = path.join(DATA_DIR, "/last_run");
 const RUNS_CSV = path.join(DATA_DIR, "/runs.csv");
-const RESULTS_CSV = path.join(DATA_DIR, "/results.csv");
-const LISTINGS_CSV = path.join(DATA_DIR, "/listings.csv");
 
 const FILE_ENCODING = "utf-8";
 
@@ -45,7 +43,7 @@ async function getRunId() {
 }
 
 async function updateLastRun(lastRun) {
-  const content = "" + lastRun;
+  const content = `${lastRun}`;
   await writeFile(LAST_RUN_FILE, content, {
     encoding: FILE_ENCODING,
     flag: "w",
@@ -94,7 +92,7 @@ function parseHousingInfo(housingText) {
   };
 }
 
-async function* parseListings(page) {
+async function* parseListings(runId, page) {
   // Get all results
   const resultRowSelector = "ul#search-results > li.result-row";
   await page.waitForSelector(resultRowSelector);
@@ -121,15 +119,16 @@ async function* parseListings(page) {
     const housingText = await getText(page, $housing);
     const { bedrooms, floorSqft } = parseHousingInfo(housingText);
 
-    const result = {
+    const result = postResult(
+      runId,
       postId,
       title,
       posted,
       url,
       price,
       bedrooms,
-      floorSqft,
-    };
+      floorSqft
+    );
     console.log(JSON.stringify(result));
     yield result;
   }
@@ -151,64 +150,16 @@ async function main() {
     waitUntil: "networkidle2",
   });
 
-  const listingsStream = Readable.from(parseListings(page), {
+  const listingsStream = Readable.from(parseListings(runId, page), {
     objectMode: true,
   });
 
-  const csvTransform = new Transform({
-    objectMode: true,
-    transform(listing, encoding, callback) {
-      const { postId, title, posted, url, price, bedrooms, floorSqft } =
-        listing;
-      const csvRow = [
-        runId,
-        postId,
-        title,
-        posted,
-        url,
-        price,
-        bedrooms,
-        floorSqft,
-      ];
-      callback(undefined, csvRow);
-    },
+  const writeStream = await writeResultsStream();
+
+  pipeline(listingsStream, writeStream, () => {
+    // await browser.close();
+    console.log("Done.");
   });
-
-  let count = 0;
-  const loggingTransform = new Transform({
-    objectMode: true,
-    transform(data, encoding, callback) {
-      const parsed = data.toString(encoding);
-      console.log("Seen %d: ", count++, parsed);
-      // Pass along.
-      callback(undefined, data);
-    },
-  });
-
-  const csvStringifier = stringify();
-
-  console.log("Opening for append: ", RESULTS_CSV);
-  const outfile = await open(RESULTS_CSV, "a");
-  const writeStream = outfile.createWriteStream();
-  writeStream.on("finish", () => {
-    console.log("Closing output file...");
-    outfile.close();
-  });
-
-  const finished = new Promise((resolve) => {
-    pipeline(
-      listingsStream,
-      csvTransform,
-      csvStringifier,
-      loggingTransform,
-      writeStream,
-      resolve
-    );
-  });
-
-  await finished;
-  // await browser.close();
-  console.log("Done.");
 }
 
 main();

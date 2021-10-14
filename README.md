@@ -1,3 +1,3 @@
 ## Requirements
 
-* Requires `node >6.11.0`
+- Requires `node >6.11.0`
