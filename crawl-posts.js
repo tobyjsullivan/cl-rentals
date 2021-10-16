@@ -173,7 +173,7 @@ async function crawlPost(browser, postId, url) {
 
     return result;
   } finally {
-    page.close();
+    await page.close();
   }
 }
 
