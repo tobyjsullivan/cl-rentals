@@ -164,7 +164,10 @@ export async function fetchResults(browser, searchPageUrl, onFindPost) {
   const writeStream = await writeResultsStream();
 
   return new Promise((resolve) =>
-    pipeline(listingsStream, callbackTransform, writeStream, resolve)
+    pipeline(listingsStream, callbackTransform, writeStream, async () => {
+      await page.close();
+      resolve();
+    })
   );
 }
 

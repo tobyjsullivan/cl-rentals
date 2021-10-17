@@ -169,7 +169,9 @@ async function hydrateFoundPosts() {
 
   const updatePostsWritable = new Writable({
     objectMode: true,
-    write({ postId, removed, fetched }, encoding, callback) {
+    write(post, encoding, callback) {
+      recordFoundPost(post);
+      const { postId, removed, fetched } = post;
       if (fetched) {
         const fetchedTimestamp = new Date(Date.parse(fetched));
         markPostFetched(postId, fetchedTimestamp);

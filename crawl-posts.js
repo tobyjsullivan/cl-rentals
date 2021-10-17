@@ -27,7 +27,12 @@ async function getAttribute(page, $el, attribute) {
   );
 }
 
-export async function crawlPosts(browser, postIds, postUrlsById, onPostCrawled) {
+export async function crawlPosts(
+  browser,
+  postIds,
+  postUrlsById,
+  onPostCrawled
+) {
   const streamPostIds = Readable.from(postIds);
 
   // Waits a short time between each chunk to slow crawl and avaid hitting rate limits.
@@ -52,7 +57,6 @@ export async function crawlPosts(browser, postIds, postUrlsById, onPostCrawled) 
         console.log("Received Post ID: ", postId);
         const url = postUrlsById[postId];
         const crawlResult = await crawlPost(browser, postId, url);
-        console.log("crawlResult: ", crawlResult);
         callback(undefined, crawlResult);
       } catch (err) {
         console.log("Crawl error: ", err);
@@ -64,17 +68,24 @@ export async function crawlPosts(browser, postIds, postUrlsById, onPostCrawled) 
   const callbackTransform = new Transform({
     objectMode: true,
     transform(crawlResult, encoding, callback) {
-      if (onPostCrawled && typeof onPostCrawled === 'function') {
-        onPostCrawled({...crawlResult})
+      if (onPostCrawled && typeof onPostCrawled === "function") {
+        onPostCrawled({ ...crawlResult });
       }
       callback(undefined, crawlResult);
-    }
-  })
+    },
+  });
 
   const writeStream = await writeListingsStream();
 
   return new Promise((resolve) =>
-    pipeline(streamPostIds, slowMoTransform, crawlTransform, callbackTransform, writeStream, resolve)
+    pipeline(
+      streamPostIds,
+      slowMoTransform,
+      crawlTransform,
+      callbackTransform,
+      writeStream,
+      resolve
+    )
   );
 }
 
@@ -185,11 +196,16 @@ async function crawlPost(browser, postId, url) {
       null,
       fetched.toISOString()
     );
-    console.log("Parsed listing: ", result);
 
     return result;
+  } catch (err) {
+    console.error("Error crawling post ", postId, url, err);
   } finally {
-    await page.close();
+    try {
+      await page.close();
+    } catch (err) {
+      console.warn("Failed to close page: ", err);
+    }
   }
 }
 
