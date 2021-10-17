@@ -27,7 +27,7 @@ async function getAttribute(page, $el, attribute) {
   );
 }
 
-async function crawlPosts(browser, postIds, postUrlsById) {
+export async function crawlPosts(browser, postIds, postUrlsById, onPostCrawled) {
   const streamPostIds = Readable.from(postIds);
 
   // Waits a short time between each chunk to slow crawl and avaid hitting rate limits.
@@ -61,9 +61,21 @@ async function crawlPosts(browser, postIds, postUrlsById) {
     },
   });
 
-  return streamPostIds //
-    .pipe(slowMoTransform) //
-    .pipe(crawlTransform);
+  const callbackTransform = new Transform({
+    objectMode: true,
+    transform(crawlResult, encoding, callback) {
+      if (onPostCrawled && typeof onPostCrawled === 'function') {
+        onPostCrawled({...crawlResult})
+      }
+      callback(undefined, crawlResult);
+    }
+  })
+
+  const writeStream = await writeListingsStream();
+
+  return new Promise((resolve) =>
+    pipeline(streamPostIds, slowMoTransform, crawlTransform, callbackTransform, writeStream, resolve)
+  );
 }
 
 function parseHousingText(housingText) {
@@ -90,6 +102,8 @@ async function crawlPost(browser, postId, url) {
       waitUntil: "networkidle2",
     });
 
+    const fetched = new Date();
+
     const bodySelector = ".body";
     await page.waitForSelector(bodySelector);
     const $body = await page.$(bodySelector);
@@ -113,8 +127,9 @@ async function crawlPost(browser, postId, url) {
         null,
         null,
         null,
-        new Date().toISOString(),
-        removedText
+        fetched.toISOString(),
+        removedText,
+        fetched.toISOString()
       );
     }
 
@@ -167,7 +182,8 @@ async function crawlPost(browser, postId, url) {
       posted,
       updated,
       null,
-      null
+      null,
+      fetched.toISOString()
     );
     console.log("Parsed listing: ", result);
 
@@ -177,12 +193,7 @@ async function crawlPost(browser, postId, url) {
   }
 }
 
-async function main() {
-  const browser = await puppeteer.launch({
-    headless: true,
-    slowMo: 80,
-  });
-
+async function crawlNewPosts(browser) {
   // Read CSV of listings and build map of [Post ID => URL]
   const postUrlsById = {};
   for await (const { postId, url } of await readResultsStream()) {
@@ -206,14 +217,19 @@ async function main() {
   console.log("Planning to crawl %d posts.", missingPostIds.length);
 
   // Crawl all the remaining posts
-  const listingStream = await crawlPosts(browser, missingPostIds, postUrlsById);
-
-  const writeStream = await writeListingsStream();
-
-  pipeline(listingStream, writeStream, async () => {
-    console.log("Done.");
-    await browser.close();
-  });
+  await crawlPosts(browser, missingPostIds, postUrlsById);
 }
 
-main();
+async function main() {
+  const browser = await puppeteer.launch({
+    headless: true,
+    slowMo: 80,
+  });
+
+  await crawlNewPosts(browser);
+
+  console.log("Done.");
+  await browser.close();
+}
+
+// main();

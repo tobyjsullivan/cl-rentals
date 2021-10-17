@@ -20,7 +20,8 @@ export const listing = (
   posted,
   updated,
   removed,
-  flagged
+  flagged,
+  fetched
 ) => ({
   postId,
   url,
@@ -37,6 +38,7 @@ export const listing = (
   updated,
   removed,
   flagged,
+  fetched,
 });
 
 const toCsvRow = ({
@@ -55,6 +57,7 @@ const toCsvRow = ({
   updated,
   removed,
   flagged,
+  fetched,
 }) => [
   postId,
   url,
@@ -71,6 +74,7 @@ const toCsvRow = ({
   updated,
   removed,
   flagged,
+  fetched,
 ];
 
 const fromCsvRow = ([
@@ -89,6 +93,7 @@ const fromCsvRow = ([
   updated,
   removed,
   flagged,
+  fetched,
 ]) => ({
   postId,
   url,
@@ -105,6 +110,7 @@ const fromCsvRow = ([
   updated,
   removed,
   flagged,
+  fetched,
 });
 
 export const readListingsStream = async () => {

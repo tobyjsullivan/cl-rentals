@@ -6,6 +6,7 @@
   "license": "UNLICENSED",
   "private": true,
   "scripts": {
+    "start": "node --es-module-specifier-resolution=node ./index.js",
     "fetch-listings": "node --es-module-specifier-resolution=node ./fetch-listings.js",
     "crawl-posts": "node --es-module-specifier-resolution=node ./crawl-posts.js",
     "lint": "yarn prettier --write ."

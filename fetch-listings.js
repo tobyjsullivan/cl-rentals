@@ -1,6 +1,6 @@
 import { readFile, writeFile, access, mkdir } from "fs/promises";
 import puppeteer from "puppeteer";
-import { Readable, pipeline } from "stream";
+import { Readable, pipeline, Transform } from "stream";
 import path from "path";
 import { result as postResult, writeResultsStream } from "./results";
 
@@ -134,19 +134,15 @@ async function* parseListings(runId, page) {
   }
 }
 
-async function main() {
+export async function fetchResults(browser, searchPageUrl, onFindPost) {
   // Increment the last run ID before doing anything else. It's very not good if two runs execute with the same value.
   const runId = await getRunId();
   console.log("Current run: ", runId);
 
-  const browser = await puppeteer.launch({
-    headless: false,
-    slowMo: 10,
-  });
   const page = await browser.newPage();
   attachLogging(page);
 
-  await page.goto(START_URL, {
+  await page.goto(searchPageUrl, {
     waitUntil: "networkidle2",
   });
 
@@ -154,12 +150,34 @@ async function main() {
     objectMode: true,
   });
 
+  // Fires the onFindPost callback for every result found.
+  const callbackTransform = new Transform({
+    objectMode: true,
+    transform(data, encoding, callback) {
+      if (onFindPost && typeof onFindPost === "function") {
+        onFindPost({ ...data });
+      }
+      callback(undefined, data);
+    },
+  });
+
   const writeStream = await writeResultsStream();
 
-  pipeline(listingsStream, writeStream, async () => {
-    await browser.close();
-    console.log("Done.");
-  });
+  return new Promise((resolve) =>
+    pipeline(listingsStream, callbackTransform, writeStream, resolve)
+  );
 }
 
-main();
+async function main() {
+  const browser = await puppeteer.launch({
+    headless: false,
+    slowMo: 10,
+  });
+
+  await fetchResults(START_URL);
+
+  await browser.close();
+  console.log("Done.");
+}
+
+// main();
