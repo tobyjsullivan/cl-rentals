@@ -1,54 +1,8 @@
 import { readFile, writeFile, access, mkdir } from "fs/promises";
-import puppeteer from "puppeteer";
 import { Readable, pipeline, Transform } from "stream";
-import path from "path";
-import { result as postResult, writeResultsStream } from "./results";
-
-const START_URL =
-  "https://vancouver.craigslist.org/d/apartments-housing-for-rent/search/apa";
-
-const DATA_DIR = "./data";
-const LAST_RUN_FILE = path.join(DATA_DIR, "/last_run");
-const RUNS_CSV = path.join(DATA_DIR, "/runs.csv");
+import { result as postResult } from "./results";
 
 const FILE_ENCODING = "utf-8";
-
-async function requireDataDir() {
-  try {
-    await access(DATA_DIR);
-  } catch (err) {
-    // Data dir does not exist
-    console.log("Data dir does not exist. Creating", DATA_DIR);
-    await mkdir(DATA_DIR);
-    console.log("Data dir created.");
-  }
-}
-
-async function getRunId() {
-  await requireDataDir();
-  try {
-    const content = await readFile(LAST_RUN_FILE, { encoding: FILE_ENCODING });
-    console.log("Last Run ID: ", content);
-    const lastRun = parseInt(content);
-    const runId = lastRun + 1;
-    await updateLastRun(runId);
-    return runId;
-  } catch (err) {
-    // No last run file.
-    console.log("No last run. Defaulting to run ID = 1.");
-    const runId = 1;
-    await updateLastRun(runId);
-    return runId;
-  }
-}
-
-async function updateLastRun(lastRun) {
-  const content = `${lastRun}`;
-  await writeFile(LAST_RUN_FILE, content, {
-    encoding: FILE_ENCODING,
-    flag: "w",
-  });
-}
 
 function attachLogging(page) {
   page.on("console", (consoleObj) => console.log(consoleObj.text()));
@@ -134,53 +88,73 @@ async function* parseListings(runId, page) {
   }
 }
 
-export async function fetchResults(browser, searchPageUrl, onFindPost) {
-  // Increment the last run ID before doing anything else. It's very not good if two runs execute with the same value.
-  const runId = await getRunId();
-  console.log("Current run: ", runId);
+export class FetchListings {
+  constructor(resultSvc, lastRunFile) {
+    this.resultSvc = resultSvc;
+    this.lastRunFile = lastRunFile;
+  }
 
-  const page = await browser.newPage();
-  attachLogging(page);
+  async fetchResults(browser, searchPageUrl, onFindPost) {
+    // Increment the last run ID before doing anything else. It's very not good if two runs execute with the same value.
+    const runId = await this._getRunId();
+    console.log("Current run: ", runId);
 
-  await page.goto(searchPageUrl, {
-    waitUntil: "networkidle2",
-  });
+    const page = await browser.newPage();
+    attachLogging(page);
 
-  const listingsStream = Readable.from(parseListings(runId, page), {
-    objectMode: true,
-  });
+    await page.goto(searchPageUrl, {
+      waitUntil: "networkidle2",
+    });
 
-  // Fires the onFindPost callback for every result found.
-  const callbackTransform = new Transform({
-    objectMode: true,
-    transform(data, encoding, callback) {
-      if (onFindPost && typeof onFindPost === "function") {
-        onFindPost({ ...data });
-      }
-      callback(undefined, data);
-    },
-  });
+    const listingsStream = Readable.from(parseListings(runId, page), {
+      objectMode: true,
+    });
 
-  const writeStream = await writeResultsStream();
+    // Fires the onFindPost callback for every result found.
+    const callbackTransform = new Transform({
+      objectMode: true,
+      transform(data, encoding, callback) {
+        if (onFindPost && typeof onFindPost === "function") {
+          onFindPost({ ...data });
+        }
+        callback(undefined, data);
+      },
+    });
 
-  return new Promise((resolve) =>
-    pipeline(listingsStream, callbackTransform, writeStream, async () => {
-      await page.close();
-      resolve();
-    })
-  );
+    const writeStream = await this.resultSvc.writeResultsStream();
+
+    return new Promise((resolve) =>
+      pipeline(listingsStream, callbackTransform, writeStream, async () => {
+        await page.close();
+        resolve();
+      })
+    );
+  }
+
+  async _getRunId() {
+    try {
+      const content = await readFile(this.lastRunFile, {
+        encoding: FILE_ENCODING,
+      });
+      console.log("Last Run ID: ", content);
+      const lastRun = parseInt(content);
+      const runId = lastRun + 1;
+      await this._updateLastRun(runId);
+      return runId;
+    } catch (err) {
+      // No last run file.
+      console.log("No last run. Defaulting to run ID = 1.");
+      const runId = 1;
+      await this._updateLastRun(runId);
+      return runId;
+    }
+  }
+
+  async _updateLastRun(lastRun) {
+    const content = `${lastRun}`;
+    await writeFile(this.lastRunFile, content, {
+      encoding: FILE_ENCODING,
+      flag: "w",
+    });
+  }
 }
-
-async function main() {
-  const browser = await puppeteer.launch({
-    headless: false,
-    slowMo: 10,
-  });
-
-  await fetchResults(START_URL);
-
-  await browser.close();
-  console.log("Done.");
-}
-
-// main();

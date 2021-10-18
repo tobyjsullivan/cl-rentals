@@ -1,7 +1,5 @@
-import puppeteer from "puppeteer";
 import { pipeline, Readable, Transform } from "stream";
-import { listing, readListingsStream, writeListingsStream } from "./listings";
-import { readResultsStream } from "./results";
+import { listing } from "./listings";
 
 function attachLogging(page) {
   page.on("console", (consoleObj) => console.log(consoleObj.text()));
@@ -29,6 +27,7 @@ async function getAttribute(page, $el, attribute) {
 
 export async function crawlPosts(
   browser,
+  listings,
   postIds,
   postUrlsById,
   onPostCrawled
@@ -75,7 +74,7 @@ export async function crawlPosts(
     },
   });
 
-  const writeStream = await writeListingsStream();
+  const writeStream = await listings.writeListingsStream();
 
   return new Promise((resolve) =>
     pipeline(
@@ -106,6 +105,7 @@ function parseHousingText(housingText) {
 }
 
 async function crawlPost(browser, postId, url) {
+  // console.log("crawlPost(", browser, ", ", postId, ", ", url, ")");
   const page = await browser.newPage();
   try {
     attachLogging(page);
@@ -208,44 +208,3 @@ async function crawlPost(browser, postId, url) {
     }
   }
 }
-
-async function crawlNewPosts(browser) {
-  // Read CSV of listings and build map of [Post ID => URL]
-  const postUrlsById = {};
-  for await (const { postId, url } of await readResultsStream()) {
-    postUrlsById[postId] = url;
-  }
-
-  // Create a list of distinct Post IDs
-  const allPostIds = Object.keys(postUrlsById);
-
-  // Read CSV of previously crawled posts and create a list of all existing Post IDs
-  const existingPostIds = [];
-  for await (const { postId } of await readListingsStream()) {
-    existingPostIds.push(postId);
-  }
-
-  // Find the set of Post IDs which have not been crawled yet.
-  const missingPostIds = allPostIds.filter(
-    (id) => !existingPostIds.includes(id)
-  );
-
-  console.log("Planning to crawl %d posts.", missingPostIds.length);
-
-  // Crawl all the remaining posts
-  await crawlPosts(browser, missingPostIds, postUrlsById);
-}
-
-async function main() {
-  const browser = await puppeteer.launch({
-    headless: true,
-    slowMo: 80,
-  });
-
-  await crawlNewPosts(browser);
-
-  console.log("Done.");
-  await browser.close();
-}
-
-// main();

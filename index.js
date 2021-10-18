@@ -1,20 +1,38 @@
+import { access, mkdir } from "fs/promises";
+import path from "path";
 import puppeteer from "puppeteer";
-import { Writable } from "stream";
+import { pipeline, Writable } from "stream";
 
 import { crawlPosts } from "./crawl-posts";
-import { fetchResults } from "./fetch-listings";
-import { readListingsStream } from "./listings";
-import { readResultsStream } from "./results";
+import { FetchListings } from "./fetch-listings";
+import { Listings } from "./listings";
+import { Results } from "./results";
 
 const MILLIS_PER_MINUTE = 60 * 1000;
 const FETCH_RESULTS_PERIOD = 5 * MILLIS_PER_MINUTE;
-const RECRAWL_PERIOD = 60 * MILLIS_PER_MINUTE;
+const RECRAWL_PERIOD = 3 * 60 * MILLIS_PER_MINUTE;
 const NEW_POSTS_RECHECK_DELAY = 10 * 1000;
 
 const START_URL =
   "https://vancouver.craigslist.org/d/apartments-housing-for-rent/search/apa";
 
+const DATA_DIR = process.env.DATA_DIR || "./data";
+const LAST_RUN_FILE = path.join(DATA_DIR, "/last_run");
+const LISTINGS_CSV = path.join(DATA_DIR, "/listings.csv");
+const RESULTS_CSV = path.join(DATA_DIR, "/results.csv");
+
 const foundPosts = {};
+
+async function requireDataDir() {
+  try {
+    await access(DATA_DIR);
+  } catch (err) {
+    // Data dir does not exist
+    console.log("Data dir does not exist. Creating", DATA_DIR);
+    await mkdir(DATA_DIR);
+    console.log("Data dir created.");
+  }
+}
 
 function recordFoundPost(post) {
   const { postId } = post;
@@ -89,9 +107,13 @@ function findNextPostsToCrawl() {
   return overduePostIds;
 }
 
-async function startFetchingListings(browser, onFindPost) {
+async function startFetchingListings(browser, fetchListingSvc, onFindPost) {
   console.log("Fetching search results...");
-  await fetchResults(browser, START_URL, onFindPost);
+  try {
+    await fetchListingSvc.fetchResults(browser, START_URL, onFindPost);
+  } catch (err) {
+    console.error("Error during fetchResults: ", err);
+  }
 
   console.log("Scheduling next listings fetch...");
   // Schedule another crawl. Don't resolve promise until all crawls complete.
@@ -99,7 +121,7 @@ async function startFetchingListings(browser, onFindPost) {
   return new Promise((resolve, reject) => {
     setTimeout(
       () =>
-        startFetchingListings(browser, onFindPost) //
+        startFetchingListings(browser, fetchListingSvc, onFindPost) //
           .then(resolve)
           .catch(reject),
       FETCH_RESULTS_PERIOD
@@ -107,7 +129,7 @@ async function startFetchingListings(browser, onFindPost) {
   });
 }
 
-async function startCrawlingPosts(browser) {
+async function startCrawlingPosts(browser, listingSvc) {
   // Find the next N posts to fetch
   const nextPostIds = findNextPostsToCrawl().slice(0, 10);
   console.log("Found %d posts ready to crawl.", nextPostIds.length);
@@ -116,7 +138,7 @@ async function startCrawlingPosts(browser) {
     return new Promise((resolve, reject) =>
       setTimeout(
         () =>
-          startCrawlingPosts(browser) //
+          startCrawlingPosts(browser, listingSvc) //
             .then(resolve)
             .catch(reject),
         NEW_POSTS_RECHECK_DELAY
@@ -144,15 +166,25 @@ async function startCrawlingPosts(browser) {
 
   // Crawl the posts
   console.log("Crawling posts...");
-  await crawlPosts(browser, nextPostIds, postUrlsById, handlePostCrawled);
+  try {
+    await crawlPosts(
+      browser,
+      listingSvc,
+      nextPostIds,
+      postUrlsById,
+      handlePostCrawled
+    );
+  } catch (err) {
+    console.error("Error during crawlPosts: ", err);
+  }
 
   // Crawl the next post
-  await startCrawlingPosts(browser);
+  await startCrawlingPosts(browser, listingSvc);
 }
 
-async function hydrateFoundPosts() {
+async function hydrateFoundPosts(listingSvc, resultSvc) {
   // Load all results and build a map
-  const results = await readResultsStream();
+  const results = await resultSvc.readResultsStream();
 
   const addFoundPostsWritable = new Writable({
     objectMode: true,
@@ -162,10 +194,12 @@ async function hydrateFoundPosts() {
     },
   });
 
-  results.pipe(addFoundPostsWritable);
+  await new Promise((resolve) =>
+    pipeline(results, addFoundPostsWritable, resolve)
+  );
 
   // Iterate over all listings and extract lastFetch and removed info
-  const listings = await readListingsStream();
+  const listings = await listingSvc.readListingsStream();
 
   const updatePostsWritable = new Writable({
     objectMode: true,
@@ -183,14 +217,24 @@ async function hydrateFoundPosts() {
     },
   });
 
-  listings.pipe(updatePostsWritable);
+  return new Promise((resolve) =>
+    pipeline(listings, updatePostsWritable, resolve)
+  );
 }
 
 async function main() {
-  await hydrateFoundPosts();
+  await requireDataDir();
+
+  const listingSvc = new Listings(LISTINGS_CSV);
+  const resultSvc = new Results(RESULTS_CSV);
+  const fetchListingSvc = new FetchListings(resultSvc, LAST_RUN_FILE);
+
+  await hydrateFoundPosts(listingSvc, resultSvc);
+  const totalCount = Object.keys(foundPosts).length;
+  console.log("Rehydrated %d found posts", totalCount);
 
   const browser = await puppeteer.launch({
-    headless: false,
+    headless: true,
     slowMo: 10,
   });
 
@@ -200,9 +244,13 @@ async function main() {
   };
 
   console.log("Starting fetch listings...");
-  const doneFetchingListings = startFetchingListings(browser, handlePostFound);
+  const doneFetchingListings = startFetchingListings(
+    browser,
+    fetchListingSvc,
+    handlePostFound
+  );
   console.log("Starting crawl posts...");
-  const doneCrawlingPosts = startCrawlingPosts(browser);
+  const doneCrawlingPosts = startCrawlingPosts(browser, listingSvc);
 
   console.log("Waiting for main tasks to complete...");
   await Promise.all([doneFetchingListings, doneCrawlingPosts]);
