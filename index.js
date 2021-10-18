@@ -108,8 +108,8 @@ async function startFetchingListings(browser, onFindPost) {
 }
 
 async function startCrawlingPosts(browser) {
-  // Find the next posts to fetch
-  const nextPostIds = findNextPostsToCrawl();
+  // Find the next N posts to fetch
+  const nextPostIds = findNextPostsToCrawl().slice(0, 10);
   console.log("Found %d posts ready to crawl.", nextPostIds.length);
   if (nextPostIds.length === 0) {
     // Wait a second and try again
