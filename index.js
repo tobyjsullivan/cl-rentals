@@ -1,7 +1,8 @@
 import { access, mkdir } from "fs/promises";
 import path from "path";
 import puppeteer from "puppeteer";
-import { pipeline, Writable } from "stream";
+import stream, { Writable } from "stream";
+import { promisify } from "util";
 
 import { crawlPosts } from "./crawl-posts";
 import { FetchListings } from "./fetch-listings";
@@ -22,6 +23,8 @@ const LISTINGS_CSV = path.join(DATA_DIR, "/listings.csv");
 const RESULTS_CSV = path.join(DATA_DIR, "/results.csv");
 
 const foundPosts = {};
+
+const pipeline = promisify(stream.pipeline);
 
 async function requireDataDir() {
   try {
@@ -194,9 +197,7 @@ async function hydrateFoundPosts(listingSvc, resultSvc) {
     },
   });
 
-  await new Promise((resolve) =>
-    pipeline(results, addFoundPostsWritable, resolve)
-  );
+  await pipeline(results, addFoundPostsWritable);
 
   // Iterate over all listings and extract lastFetch and removed info
   const listings = await listingSvc.readListingsStream();
@@ -217,9 +218,7 @@ async function hydrateFoundPosts(listingSvc, resultSvc) {
     },
   });
 
-  return new Promise((resolve) =>
-    pipeline(listings, updatePostsWritable, resolve)
-  );
+  await pipeline(listings, updatePostsWritable);
 }
 
 async function main() {

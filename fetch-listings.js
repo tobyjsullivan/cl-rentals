@@ -1,8 +1,11 @@
-import { readFile, writeFile, access, mkdir } from "fs/promises";
-import { Readable, pipeline, Transform } from "stream";
+import { readFile, writeFile } from "fs/promises";
+import stream, { Readable, Transform } from "stream";
+import { promisify } from "util";
 import { result as postResult } from "./results";
 
 const FILE_ENCODING = "utf-8";
+
+const pipeline = promisify(stream.pipeline);
 
 function attachLogging(page) {
   page.on("console", (consoleObj) => console.log(consoleObj.text()));
@@ -100,35 +103,40 @@ export class FetchListings {
     console.log("Current run: ", runId);
 
     const page = await browser.newPage();
-    attachLogging(page);
+    try {
+      attachLogging(page);
 
-    await page.goto(searchPageUrl, {
-      waitUntil: "networkidle2",
-    });
+      await page.goto(searchPageUrl, {
+        waitUntil: "networkidle2",
+      });
 
-    const listingsStream = Readable.from(parseListings(runId, page), {
-      objectMode: true,
-    });
+      const listingsStream = Readable.from(parseListings(runId, page), {
+        objectMode: true,
+      });
 
-    // Fires the onFindPost callback for every result found.
-    const callbackTransform = new Transform({
-      objectMode: true,
-      transform(data, encoding, callback) {
-        if (onFindPost && typeof onFindPost === "function") {
-          onFindPost({ ...data });
-        }
-        callback(undefined, data);
-      },
-    });
+      // Fires the onFindPost callback for every result found.
+      const callbackTransform = new Transform({
+        objectMode: true,
+        transform(data, encoding, callback) {
+          if (onFindPost && typeof onFindPost === "function") {
+            onFindPost({ ...data });
+          }
+          callback(undefined, data);
+        },
+      });
 
-    const writeStream = await this.resultSvc.writeResultsStream();
+      const writeStream = await this.resultSvc.writeResultsStream();
 
-    return new Promise((resolve) =>
-      pipeline(listingsStream, callbackTransform, writeStream, async () => {
+      await pipeline(listingsStream, callbackTransform, writeStream);
+    } catch (err) {
+      console.error("Error in fetchResults: ", err);
+    } finally {
+      try {
         await page.close();
-        resolve();
-      })
-    );
+      } catch (err) {
+        console.warn("Error closing page in fetchResults: ", err);
+      }
+    }
   }
 
   async _getRunId() {
