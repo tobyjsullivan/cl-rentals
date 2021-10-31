@@ -109,9 +109,32 @@ async function crawlPost(browser, postId, url) {
   const page = await browser.newPage();
   try {
     attachLogging(page);
-    await page.goto(url, {
+    const response = await page.goto(url, {
       waitUntil: "networkidle2",
     });
+
+    const status = response.status();
+    if (status > 399) {
+      console.log(`URL returned error status ${status}. URL: ${url}`);
+      return listing(
+        postId,
+        url,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        fetched.toISOString(),
+        `URL returned error status ${status}.`,
+        fetched.toISOString()
+      );
+    }
 
     const fetched = new Date();
 
