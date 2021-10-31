@@ -113,6 +113,8 @@ async function crawlPost(browser, postId, url) {
       waitUntil: "networkidle2",
     });
 
+    const fetched = new Date();
+
     const status = response.status();
     if (status > 399) {
       console.log(`URL returned error status ${status}. URL: ${url}`);
@@ -135,8 +137,6 @@ async function crawlPost(browser, postId, url) {
         fetched.toISOString()
       );
     }
-
-    const fetched = new Date();
 
     const bodySelector = ".body";
     await page.waitForSelector(bodySelector);
