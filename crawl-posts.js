@@ -130,7 +130,7 @@ async function crawlPost(browser, postId, url) {
         null,
         null,
         null,
-        fetched.toISOString(),
+        status <= 499 ? fetched.toISOString() : null,
         `URL returned error status ${status}.`,
         fetched.toISOString()
       );
