@@ -1,3 +1,4 @@
+import axios from "axios";
 import { access, mkdir } from "fs/promises";
 import path from "path";
 import puppeteer from "puppeteer";
@@ -21,6 +22,8 @@ const DATA_DIR = process.env.DATA_DIR || "./data";
 const LAST_RUN_FILE = path.join(DATA_DIR, "/last_run");
 const LISTINGS_CSV = path.join(DATA_DIR, "/listings.csv");
 const RESULTS_CSV = path.join(DATA_DIR, "/results.csv");
+
+const LISTINGS_SVC = "http://[::]:3002";
 
 const foundPosts = {};
 
@@ -50,6 +53,18 @@ function recordFoundPost(post) {
 function getPostUrl(postId) {
   const { url } = foundPosts[postId];
   return url;
+}
+
+async function pushPost(post) {
+  await axios.post(
+    `${LISTINGS_SVC}/rental-listings`,
+    { source: "craigslist", ...post },
+    {
+      headers: {
+        "Content-type": "application/json",
+      },
+    }
+  );
 }
 
 function markPostFetched(postId, fetchedDate) {
@@ -158,8 +173,10 @@ async function startCrawlingPosts(browser, listingSvc) {
     {}
   );
 
-  const handlePostCrawled = ({ postId, removed }) => {
+  const handlePostCrawled = async (post) => {
+    const { postId, removed } = post;
     console.log("Crawled post: ", postId);
+    await pushPost(post);
     markPostFetched(postId);
     if (removed) {
       console.log("Post was removed: ", postId);
@@ -204,7 +221,7 @@ async function hydrateFoundPosts(listingSvc, resultSvc) {
 
   const updatePostsWritable = new Writable({
     objectMode: true,
-    write(post, encoding, callback) {
+    async write(post, encoding, callback) {
       recordFoundPost(post);
       const { postId, removed, fetched } = post;
       if (fetched) {

@@ -12,6 +12,7 @@
     "lint": "yarn prettier --write ."
   },
   "dependencies": {
+    "axios": "^0.24.0",
     "csv-parse": "^4.16.3",
     "csv-stringify": "^5.6.5",
     "puppeteer": "^10.4.0"
