@@ -23,7 +23,7 @@ const LAST_RUN_FILE = path.join(DATA_DIR, "/last_run");
 const LISTINGS_CSV = path.join(DATA_DIR, "/listings.csv");
 const RESULTS_CSV = path.join(DATA_DIR, "/results.csv");
 
-const LISTINGS_SVC = "http://[::]:3002";
+const LOG_POST_ENDPOINT = "http://[::]:3002/crawlers/craigslist/rental-posts";
 
 const foundPosts = {};
 
@@ -56,15 +56,11 @@ function getPostUrl(postId) {
 }
 
 async function pushPost(post) {
-  await axios.post(
-    `${LISTINGS_SVC}/rental-listings`,
-    { source: "craigslist", ...post },
-    {
-      headers: {
-        "Content-type": "application/json",
-      },
-    }
-  );
+  await axios.post(LOG_POST_ENDPOINT, post, {
+    headers: {
+      "Content-type": "application/json",
+    },
+  });
 }
 
 function markPostFetched(postId, fetchedDate) {
